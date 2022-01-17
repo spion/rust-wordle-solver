@@ -16,13 +16,26 @@ enum Mark {
 type DictString = String;
 
 fn compute_guess_scores<'a>(
-  words: &Vec<&'a DictString>,
+  words_all: &Vec<&'a DictString>,
   words_reduced: &Vec<&'a DictString>,
 ) -> HashMap<&'a DictString, f64> {
-  return words
+  return words_all
     .into_iter()
     .map(|&x| (x, 0.0 - compute_maximal_subset_size(x, &words_reduced)))
     .collect();
+}
+
+fn compute_maximal_subset_size(guess: &DictString, words: &Vec<&DictString>) -> f64 {
+  let max_bucket_size = words
+    .into_iter()
+    .map(|w| (compute_bucket(guess, w), 1))
+    .into_group_map()
+    .into_iter()
+    .map(|(_, g)| g.len())
+    .max()
+    .unwrap_or(0);
+
+  return max_bucket_size as f64;
 }
 
 fn compute_bucket(guess: &DictString, word: &DictString) -> Vec<Mark> {
@@ -43,19 +56,6 @@ fn compute_bucket(guess: &DictString, word: &DictString) -> Vec<Mark> {
     .collect();
 }
 
-fn compute_maximal_subset_size(guess: &DictString, words: &Vec<&DictString>) -> f64 {
-  let max_bucket_size = words
-    .into_iter()
-    .map(|w| (compute_bucket(guess, w), 1))
-    .into_group_map()
-    .into_iter()
-    .map(|(_, g)| g.len())
-    .max()
-    .unwrap_or(0);
-
-  return max_bucket_size as f64;
-}
-
 fn reduce_dictionary<'a>(
   guess: &DictString,
   marks: &Vec<Mark>,
@@ -74,7 +74,6 @@ fn get_suggestions<'a>(
 ) -> (Vec<(&'a DictString, f64)>, Vec<(&'a DictString, f64)>) {
   let guess_scores = compute_guess_scores(&dict, &reduced_dict);
 
-  // guess_probabilities.get(())
   let mut cloned = dict.clone();
 
   let score_criteria = |a: &&DictString, b: &&DictString| {
