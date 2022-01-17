@@ -9,8 +9,8 @@ use itertools::Itertools;
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 enum Mark {
   NotPresent,
-  Unpositioned,
-  Positioned,
+  WrongPosition,
+  RightPosition,
 }
 
 type DictString = String;
@@ -38,22 +38,34 @@ fn compute_maximal_subset_size(guess: &DictString, words: &Vec<&DictString>) -> 
   return max_bucket_size as f64;
 }
 
+/// This function tries to faithfully reproduce the same algorithm as found
+/// in the original Wordle. Letters from the word get "used up" first by their presence
+/// at the exact same position (i.e. "green" marks). Then if a letter appears multiple times in
+/// the guess but at the wrong position, it will start using up the same letter in the word, to
+/// ensure that if there is just a single occurence of the guessed letter in the word, only the
+/// first occurrence in the guess gets marked "yellow" (wrong position)
+///
 fn compute_bucket(guess: &DictString, word: &DictString) -> Vec<Mark> {
-  return guess
-    .chars()
-    .enumerate()
-    .zip(word.chars())
-    .map(|((_index, guess_char), word_char)| {
-      if guess_char == word_char {
-        return Mark::Positioned;
-      } else {
-        return match word.find(guess_char) {
-          None => Mark::NotPresent,
-          Some(_) => Mark::Unpositioned,
-        };
+  let mut used = vec![false; word.len()];
+  let mut result = vec![Mark::NotPresent; word.len()];
+
+  for ((index, guess_char), word_char) in guess.chars().enumerate().zip(word.chars()) {
+    if word_char == guess_char {
+      used[index] = true;
+      result[index] = Mark::RightPosition;
+    }
+  }
+
+  for (guess_index, guess_char) in guess.chars().enumerate() {
+    for (word_index, word_char) in word.chars().enumerate() {
+      if guess_char == word_char && word_index != guess_index && !used[word_index] {
+        used[word_index] = true;
+        result[guess_index] = Mark::WrongPosition;
       }
-    })
-    .collect();
+    }
+  }
+
+  return result;
 }
 
 fn reduce_dictionary<'a>(
@@ -148,8 +160,8 @@ fn interactive(dictionary: Vec<DictString>) {
       .chars()
       .map(|c| match c {
         '-' => Mark::NotPresent,
-        '+' => Mark::Unpositioned,
-        _ => Mark::Positioned,
+        '+' => Mark::WrongPosition,
+        _ => Mark::RightPosition,
       })
       .collect();
 
