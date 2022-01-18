@@ -13,7 +13,7 @@ cargo build --release
 
 # Usage
 
-The solver will output two types of words: candidate suggestions and candidate guesses, 
+The solver will output two types of words: candidate suggestions and candidate guesses,
 along with their scores. After doing that, it will wait on your input describing the word
 you picked and the Wordle outcome you got:
 
@@ -33,11 +33,11 @@ croon -oo--
 
 Suggestions are words that don't necessarily conform to the constraints that Wordle has
 presented so far, but would reduce the set of possible words very well. Guesses are words that
-do conform to the constraints - they are also sorted by how well they will subdivide the 
+do conform to the constraints - they are also sorted by how well they will subdivide the
 remaining possible guesses
 
 # How does it work?
 
-For each possible guess, we subdivide the set of words into different subsets based on what answers Wordle could possibly give us. Then we pick the words that give us the smallest worst-case set sizes.
+For each possible guess, we subdivide the set of words into different subsets based on what colors wordle would give us for that word. Then we score the words based on the largest subset size. We aim to pick a word where the largest subset is the smallest.
 
 This is illustrated in the following jamboard: https://jamboard.google.com/d/1weQUvRyrVqaYsPRa_qhH-NycKwW3TSUqa46_CBsYGSk/viewer?f=0
