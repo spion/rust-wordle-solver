@@ -61,6 +61,7 @@ fn compute_bucket(guess: &DictString, word: &DictString) -> Vec<Mark> {
       if guess_char == word_char && word_index != guess_index && !used[word_index] {
         used[word_index] = true;
         result[guess_index] = Mark::WrongPosition;
+        break;
       }
     }
   }
