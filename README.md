@@ -29,6 +29,7 @@ Example exchange (optimal candidate openers censored to avoid spoilers):
 croon -oo--
 > Got word croon and marks: -oo--
 > Suggestions: 5758 [("plate", -3.0), ("youth", -3.0), ("depth", -3.0), ("unity", -3.0), ("dusty", -3.0), ("flute", -3.0), ("rusty", -3.0)]
+> Guesses: 15 [("trout", -5.0), ("wroth", -5.0), ("group", -6.0), ("proud", -6.0), ("prowl", -6.0), ("troll", -6.0), ("grout", -6.0)]
 ```
 
 Suggestions are words that don't necessarily conform to the constraints that Wordle has
