@@ -17,13 +17,13 @@ The solver will output two types of words: candidate suggestions and candidate g
 along with their scores. After doing that, it will wait on your input describing the word
 you picked and the Wordle outcome you got:
 
-Example exchange:
+Example exchange (optimal candidate openers censored to avoid spoilers):
 
 ```
-> Suggestions: 5758 [("aloes", -355.0), ("serai", -366.0), ("arose", -377.0), ("earls", -393.0), ("reals", -393.0), ("nears", -395.0), ("nares", -395.0)]
-> Guesses: 5758 [("aloes", -355.0), ("serai", -366.0), ("arose", -377.0), ("earls", -393.0), ("reals", -393.0), ("nears", -395.0), ("nares", -395.0)]
-serai --+--
-> Got word serai and marks: --+--
+> Suggestions: 5758 [("<word>", -355.0), ("<word>", -366.0), ("<word>", -377.0), ("<word>", -393.0), ("<word>", -393.0), ("<word>", -395.0), ("<word>", -395.0)]
+> Guesses: 5758 [("<word>", -355.0), ("<word>", -366.0), ("<word>", -377.0), ("<word>", -393.0), ("<word>", -393.0), ("<word>", -395.0), ("<word>", -395.0)]
+<word> --+--
+> Got word <word> and marks: --+--
 > Suggestions: 5758 [("croon", -15.0), ("crony", -15.0), ("grout", -15.0), ("loony", -16.0), ("trunk", -17.0), ("croup", -17.0), ("troop", -18.0)]
 > Guesses: 125 [("croon", -15.0), ("crony", -15.0), ("grout", -15.0), ("trunk", -17.0), ("croup", -17.0), ("troop", -18.0), ("grunt", -18.0)]
 croon -oo--
