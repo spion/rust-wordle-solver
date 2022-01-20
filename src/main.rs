@@ -91,7 +91,17 @@ fn compute_bucket(guess: &DictString, word: &DictString) -> Vec<Mark> {
 
   for (guess_index, guess_char) in guess.chars().enumerate() {
     for (word_index, word_char) in word.chars().enumerate() {
-      if guess_char == word_char && word_index != guess_index && !used[word_index] {
+      if result[guess_index] == Mark::RightPosition {
+        continue;
+      }
+      if used[word_index] {
+        continue;
+      }
+      if word_index == guess_index {
+        continue;
+      }
+
+      if guess_char == word_char {
         used[word_index] = true;
         result[guess_index] = Mark::WrongPosition;
         break;
@@ -164,9 +174,13 @@ where
   Ok(io::BufReader::new(file).lines())
 }
 
-fn interactive(dictionary: Vec<DictString>, gambling_factor: f64) {
+fn interactive(
+  dictionary: Vec<DictString>,
+  reducing_dictionary: Vec<DictString>,
+  gambling_factor: f64,
+) {
   let dictionary_ref: Vec<&DictString> = dictionary.iter().collect();
-  let mut reducing_dictionary_ref = dictionary_ref.clone();
+  let mut reducing_dictionary_ref = reducing_dictionary.iter().collect();
 
   let stdin = io::stdin();
 
@@ -230,9 +244,15 @@ fn interactive(dictionary: Vec<DictString>, gambling_factor: f64) {
   }
 }
 
-fn play_word(word: String, dictionary: Vec<DictString>, gambling_factor: f64) {
+fn play_word(
+  word: String,
+  dictionary: Vec<DictString>,
+  reducing_dictionary: Vec<DictString>,
+  gambling_factor: f64,
+) {
   let dict_ref: Vec<&DictString> = dictionary.iter().collect();
-  let mut reducing_dict_ref = dict_ref.clone();
+  let mut reducing_dict_ref: Vec<&DictString> = reducing_dictionary.iter().collect();
+
   let mut tries = 0;
   loop {
     let (ref suggestions, ref guesses) =
@@ -295,6 +315,10 @@ struct Args {
   #[clap(short, long, default_value = "words.txt")]
   dict: String,
 
+  /// Path to a reduced guess dictionary to use
+  #[clap(short, long)]
+  guesses: Option<String>,
+
   /// Gambling factor. How optimistic should the bot be while playing (max=1.0)
   #[clap(short, long, default_value_t = 0.0)]
   gambling: f64,
@@ -313,12 +337,21 @@ fn main() {
     .filter(|l| l.chars().count() == 5 && &l.to_lowercase() == l)
     .collect();
 
+  let dictionary_reduced: Vec<DictString> = match args.guesses {
+    None => dictionary.clone(),
+    Some(file) => read_lines(file)
+      .unwrap()
+      .map(|l| l.unwrap())
+      .filter(|l| l.chars().count() == 5 && &l.to_lowercase() == l)
+      .collect(),
+  };
+
   match args.word {
     None => {
-      interactive(dictionary, args.gambling);
+      interactive(dictionary, dictionary_reduced, args.gambling);
     }
     Some(word) => {
-      play_word(word, dictionary, args.gambling);
+      play_word(word, dictionary, dictionary_reduced, args.gambling);
     }
   }
 }
