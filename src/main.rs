@@ -1,16 +1,54 @@
+use std::iter::FromIterator;
 use clap::Parser;
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead, Result};
+use std::mem::transmute;
 use std::path::Path;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 enum Mark {
-  NotPresent,
-  WrongPosition,
-  RightPosition,
+  NotPresent = 0,
+  WrongPosition = 1,
+  RightPosition = 2,
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+struct VecMark(u8);
+
+impl VecMark {
+
+  pub fn of(np: Mark) -> Self {
+    VecMark::new(np, np, np, np, np)
+  }
+  pub fn new(m1: Mark, m2: Mark, m3: Mark, m4: Mark, m5: Mark) -> Self {
+    return Self(m1 as u8 + m2 as u8 * 3 + m3 as u8 * 9 + m4 as u8 * 27 + m5 as u8 * 81);
+  }
+
+  pub fn get(&self, ix: usize) -> Mark {
+    let res = self.0 / 3_i32.pow(ix as u32) as u8 % 3;
+    unsafe { transmute::<u8, Mark>(res) }
+  }
+
+  pub fn set(&mut self, ix: usize, m:Mark) {
+    let old_val = self.get(ix);
+    self.0 = self.0 - old_val as u8 + (3_i32.pow(ix as u32) * (m as i32)) as u8;
+  }
+}
+impl FromIterator<Mark> for VecMark {
+
+  fn from_iter<I: IntoIterator<Item=Mark>>(iter: I) -> Self {
+    let mut v = VecMark::of(Mark::NotPresent);
+    let mut ix = 0;
+    for item in iter {
+      v.set(ix, item);
+      ix += 1;
+    }
+
+    return v;
+  }
 }
 
 type DictString = String;
@@ -78,20 +116,20 @@ fn compute_percentile_subset_sz(
 /// ensure that if there is just a single occurence of the guessed letter in the word, only the
 /// first occurrence in the guess gets marked "yellow" (wrong position)
 ///
-fn compute_bucket(guess: &DictString, word: &DictString) -> Vec<Mark> {
+fn compute_bucket(guess: &DictString, word: &DictString) -> VecMark {
   let mut used = vec![false; word.len()];
-  let mut result = vec![Mark::NotPresent; word.len()];
+  let mut result = VecMark::of(Mark::NotPresent);  //vec![Mark::NotPresent; word.len()];
 
   for ((index, guess_char), word_char) in guess.chars().enumerate().zip(word.chars()) {
     if word_char == guess_char {
       used[index] = true;
-      result[index] = Mark::RightPosition;
+      result.set(index, Mark::RightPosition);
     }
   }
 
   for (guess_index, guess_char) in guess.chars().enumerate() {
     for (word_index, word_char) in word.chars().enumerate() {
-      if result[guess_index] == Mark::RightPosition {
+      if result.get(guess_index) == Mark::RightPosition {
         continue;
       }
       if used[word_index] {
@@ -103,7 +141,7 @@ fn compute_bucket(guess: &DictString, word: &DictString) -> Vec<Mark> {
 
       if guess_char == word_char {
         used[word_index] = true;
-        result[guess_index] = Mark::WrongPosition;
+        result.set(guess_index, Mark::WrongPosition);
         break;
       }
     }
@@ -114,12 +152,12 @@ fn compute_bucket(guess: &DictString, word: &DictString) -> Vec<Mark> {
 
 fn reduce_dictionary<'a>(
   guess: &DictString,
-  marks: &Vec<Mark>,
+  marks: VecMark,
   dict: &Vec<&'a DictString>,
 ) -> Vec<&'a DictString> {
   return dict
     .into_iter()
-    .filter(|word| &compute_bucket(guess, word) == marks)
+    .filter(|word| compute_bucket(guess, word) == marks)
     .map(|&x| x)
     .collect();
 }
@@ -129,12 +167,10 @@ fn get_suggestions<'a>(
   reduced_dict: &Vec<&'a DictString>,
   gambling_factor: f64,
 ) -> (Vec<(&'a DictString, f64)>, Vec<(&'a DictString, f64)>) {
-  let guess_scores = compute_guess_scores(&dict, &reduced_dict, gambling_factor);
-
-  let mut cloned = dict.clone();
+  let scores = compute_guess_scores(&dict, &reduced_dict, gambling_factor);
 
   let score_criteria = |a: &&DictString, b: &&DictString| {
-    let diff = guess_scores.get(a).unwrap_or(&0.0) - guess_scores.get(b).unwrap_or(&0.0);
+    let diff = scores.get(a).unwrap_or(&0.0) - scores.get(b).unwrap_or(&0.0);
     if diff > 0.0 {
       Ordering::Less
     } else if diff < 0.0 {
@@ -144,26 +180,23 @@ fn get_suggestions<'a>(
     }
   };
 
+  let mut cloned = dict.clone();
   cloned.sort_by(score_criteria);
 
-  let mut reduced_cloned = reduced_dict.clone();
+  let top5sugg = (&cloned)
+    .into_iter()
+    .map(|&x| (x, *scores.get(&x).unwrap()))
+    .collect();
 
+  let mut reduced_cloned = reduced_dict.clone();
   reduced_cloned.sort_by(score_criteria);
 
-  let clone_ref = &cloned;
-  let reduced_cloned_ref = &reduced_cloned;
-
-  let top5: Vec<(&DictString, f64)> = clone_ref
+  let top5guess = (&reduced_cloned)
     .into_iter()
-    .map(|&x| (x, *guess_scores.get(&x).unwrap()))
+    .map(|&x| (x, *scores.get(&x).unwrap()))
     .collect();
 
-  let top5valid: Vec<(&DictString, f64)> = reduced_cloned_ref
-    .into_iter()
-    .map(|&x| (x, *guess_scores.get(&x).unwrap()))
-    .collect();
-
-  return (top5, top5valid);
+  return (top5sugg, top5guess);
 }
 
 fn read_lines<P>(filename: P) -> Result<io::Lines<io::BufReader<File>>>
@@ -205,7 +238,7 @@ fn interactive(
 
     println!("Got word {} and marks: {}", used_word, marks);
 
-    let update_marks: Vec<Mark> = marks
+    let update_marks: VecMark = marks
       .chars()
       .map(|c| match c {
         '-' => Mark::NotPresent,
@@ -215,7 +248,7 @@ fn interactive(
       .collect();
 
     reducing_dictionary_ref =
-      reduce_dictionary(&used_word, &update_marks, &reducing_dictionary_ref);
+      reduce_dictionary(&used_word, update_marks, &reducing_dictionary_ref);
 
     let (ref sugg1, ref sugg2) =
       get_suggestions(&dictionary_ref, &reducing_dictionary_ref, gambling_factor);
@@ -223,12 +256,12 @@ fn interactive(
     println!(
       "Suggestions: {:?} {:?}",
       sugg1.len(),
-      sugg1.into_iter().take(7).collect::<Vec<_>>()
+      sugg1.into_iter().take(10).collect::<Vec<_>>()
     );
     println!(
       "Guesses: {:?} {:?}",
       sugg2.len(),
-      sugg2.into_iter().take(7).collect::<Vec<_>>()
+      sugg2.into_iter().take(10).collect::<Vec<_>>()
     );
 
     let (sug_word, sug_score) = sugg1[0];
@@ -272,12 +305,12 @@ fn play_word(
       println!(
         "Suggestions: {:?} {:?}",
         suggestions.len(),
-        suggestions.into_iter().take(7).collect::<Vec<_>>()
+        suggestions.into_iter().take(10).collect::<Vec<_>>()
       );
       println!(
         "Guesses: {:?} {:?}",
         guesses.len(),
-        guesses.into_iter().take(7).collect::<Vec<_>>()
+        guesses.into_iter().take(10).collect::<Vec<_>>()
       );
 
       let (sug_word, sug_score) = suggestions[0];
@@ -295,16 +328,24 @@ fn play_word(
 
       let outcome = compute_bucket(attempt_word, &word);
 
-      if outcome == vec![Mark::RightPosition; 5] {
+      if outcome == VecMark::of(Mark::RightPosition) {
         println!("Actually guessed it!");
         break;
       } else {
         println!("Outcome: {:?}", outcome);
 
-        reducing_dict_ref = reduce_dictionary(&attempt_word, &outcome, &reducing_dict_ref);
+        reducing_dict_ref = reduce_dictionary(&attempt_word, outcome, &reducing_dict_ref);
       }
     }
   }
+}
+
+fn read_dict(file: &str) -> Vec<DictString> {
+  read_lines(file)
+    .unwrap()
+    .map(|l| l.unwrap())
+    .filter(|l| l.chars().count() == 5 && &l.to_lowercase() == l)
+    .collect()
 }
 
 /// A wordle solver
@@ -331,19 +372,11 @@ struct Args {
 fn main() {
   let args = Args::parse();
 
-  let dictionary: Vec<DictString> = read_lines(args.dict)
-    .unwrap()
-    .map(|l| l.unwrap())
-    .filter(|l| l.chars().count() == 5 && &l.to_lowercase() == l)
-    .collect();
+  let dictionary: Vec<DictString> = read_dict(&args.dict);
 
   let dictionary_reduced: Vec<DictString> = match args.guesses {
     None => dictionary.clone(),
-    Some(file) => read_lines(file)
-      .unwrap()
-      .map(|l| l.unwrap())
-      .filter(|l| l.chars().count() == 5 && &l.to_lowercase() == l)
-      .collect(),
+    Some(file) => read_dict(&file),
   };
 
   match args.word {
