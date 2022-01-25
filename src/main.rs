@@ -1,11 +1,10 @@
-use std::iter::FromIterator;
 use clap::Parser;
 use itertools::Itertools;
+use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead, Result};
-use std::mem::transmute;
 use std::path::Path;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -13,42 +12,6 @@ enum Mark {
   NotPresent = 0,
   WrongPosition = 1,
   RightPosition = 2,
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-struct VecMark(u8);
-
-impl VecMark {
-
-  pub fn of(np: Mark) -> Self {
-    VecMark::new(np, np, np, np, np)
-  }
-  pub fn new(m1: Mark, m2: Mark, m3: Mark, m4: Mark, m5: Mark) -> Self {
-    return Self(m1 as u8 + m2 as u8 * 3 + m3 as u8 * 9 + m4 as u8 * 27 + m5 as u8 * 81);
-  }
-
-  pub fn get(&self, ix: usize) -> Mark {
-    let res = self.0 / 3_i32.pow(ix as u32) as u8 % 3;
-    unsafe { transmute::<u8, Mark>(res) }
-  }
-
-  pub fn set(&mut self, ix: usize, m:Mark) {
-    let old_val = self.get(ix);
-    self.0 = self.0 - old_val as u8 + (3_i32.pow(ix as u32) * (m as i32)) as u8;
-  }
-}
-impl FromIterator<Mark> for VecMark {
-
-  fn from_iter<I: IntoIterator<Item=Mark>>(iter: I) -> Self {
-    let mut v = VecMark::of(Mark::NotPresent);
-    let mut ix = 0;
-    for item in iter {
-      v.set(ix, item);
-      ix += 1;
-    }
-
-    return v;
-  }
 }
 
 type DictString = String;
@@ -59,7 +22,7 @@ fn compute_guess_scores<'a>(
   gambling_factor: f64,
 ) -> HashMap<&'a DictString, f64> {
   return words_all
-    .into_iter()
+    .par_iter()
     .map(|&x| {
       (
         x,
@@ -116,20 +79,21 @@ fn compute_percentile_subset_sz(
 /// ensure that if there is just a single occurence of the guessed letter in the word, only the
 /// first occurrence in the guess gets marked "yellow" (wrong position)
 ///
-fn compute_bucket(guess: &DictString, word: &DictString) -> VecMark {
+// #[memoize]
+fn compute_bucket(guess: &DictString, word: &DictString) -> Vec<Mark> {
   let mut used = vec![false; word.len()];
-  let mut result = VecMark::of(Mark::NotPresent);  //vec![Mark::NotPresent; word.len()];
+  let mut result = vec![Mark::NotPresent; word.len()];
 
   for ((index, guess_char), word_char) in guess.chars().enumerate().zip(word.chars()) {
     if word_char == guess_char {
       used[index] = true;
-      result.set(index, Mark::RightPosition);
+      result[index] = Mark::RightPosition;
     }
   }
 
   for (guess_index, guess_char) in guess.chars().enumerate() {
     for (word_index, word_char) in word.chars().enumerate() {
-      if result.get(guess_index) == Mark::RightPosition {
+      if result[guess_index] == Mark::RightPosition {
         continue;
       }
       if used[word_index] {
@@ -141,7 +105,7 @@ fn compute_bucket(guess: &DictString, word: &DictString) -> VecMark {
 
       if guess_char == word_char {
         used[word_index] = true;
-        result.set(guess_index, Mark::WrongPosition);
+        result[guess_index] = Mark::WrongPosition;
         break;
       }
     }
@@ -152,12 +116,12 @@ fn compute_bucket(guess: &DictString, word: &DictString) -> VecMark {
 
 fn reduce_dictionary<'a>(
   guess: &DictString,
-  marks: VecMark,
+  marks: &Vec<Mark>,
   dict: &Vec<&'a DictString>,
 ) -> Vec<&'a DictString> {
   return dict
-    .into_iter()
-    .filter(|word| compute_bucket(guess, word) == marks)
+    .into_par_iter()
+    .filter(|word| &compute_bucket(guess, word) == marks)
     .map(|&x| x)
     .collect();
 }
@@ -181,7 +145,7 @@ fn get_suggestions<'a>(
   };
 
   let mut cloned = dict.clone();
-  cloned.sort_by(score_criteria);
+  cloned.par_sort_by(score_criteria);
 
   let top5sugg = (&cloned)
     .into_iter()
@@ -189,7 +153,7 @@ fn get_suggestions<'a>(
     .collect();
 
   let mut reduced_cloned = reduced_dict.clone();
-  reduced_cloned.sort_by(score_criteria);
+  reduced_cloned.par_sort_by(score_criteria);
 
   let top5guess = (&reduced_cloned)
     .into_iter()
@@ -238,7 +202,7 @@ fn interactive(
 
     println!("Got word {} and marks: {}", used_word, marks);
 
-    let update_marks: VecMark = marks
+    let update_marks: Vec<Mark> = marks
       .chars()
       .map(|c| match c {
         '-' => Mark::NotPresent,
@@ -248,7 +212,7 @@ fn interactive(
       .collect();
 
     reducing_dictionary_ref =
-      reduce_dictionary(&used_word, update_marks, &reducing_dictionary_ref);
+      reduce_dictionary(&used_word, &update_marks, &reducing_dictionary_ref);
 
     let (ref sugg1, ref sugg2) =
       get_suggestions(&dictionary_ref, &reducing_dictionary_ref, gambling_factor);
@@ -328,13 +292,13 @@ fn play_word(
 
       let outcome = compute_bucket(attempt_word, &word);
 
-      if outcome == VecMark::of(Mark::RightPosition) {
+      if outcome == vec![Mark::RightPosition; 5] {
         println!("Actually guessed it!");
         break;
       } else {
         println!("Outcome: {:?}", outcome);
 
-        reducing_dict_ref = reduce_dictionary(&attempt_word, outcome, &reducing_dict_ref);
+        reducing_dict_ref = reduce_dictionary(&attempt_word, &outcome, &reducing_dict_ref);
       }
     }
   }
@@ -357,7 +321,7 @@ struct Args {
   dict: String,
 
   /// Path to a reduced guess dictionary to use
-  #[clap(short, long)]
+  #[clap(long)]
   guesses: Option<String>,
 
   /// Gambling factor. How optimistic should the bot be while playing (max=1.0)
