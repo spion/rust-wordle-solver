@@ -26,7 +26,7 @@ fn compute_guess_scores<'a>(
     .map(|&x| {
       (
         x,
-        0.0 - compute_percentile_subset_sz(x, &words_reduced, gambling_factor),
+        compute_percentile_subset_sz(x, &words_reduced, gambling_factor),
       )
     })
     .collect();
@@ -39,7 +39,7 @@ fn compute_percentile_subset_sz(
 ) -> f64 {
   let buckets = words
     .into_iter()
-    .map(|w| (compute_bucket(guess, w), 1))
+    .map(|w| (compute_bucket(guess, w), w))
     .into_group_map()
     .into_iter()
     .map(|(_, g)| g.len());
@@ -136,9 +136,9 @@ fn get_suggestions<'a>(
   let score_criteria = |a: &&DictString, b: &&DictString| {
     let diff = scores.get(a).unwrap_or(&0.0) - scores.get(b).unwrap_or(&0.0);
     if diff > 0.0 {
-      Ordering::Less
-    } else if diff < 0.0 {
       Ordering::Greater
+    } else if diff < 0.0 {
+      Ordering::Less
     } else {
       Ordering::Equal
     }
