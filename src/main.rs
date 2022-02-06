@@ -16,59 +16,83 @@ enum Mark {
 
 type DictString = String;
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Strategy {
+  WorstCase,
+  Gambling(f64),
+  Average,
+}
+
+const SHOWN_GUESSES: usize = 10;
+
 fn compute_guess_scores<'a>(
   words_all: &Vec<&'a DictString>,
   words_reduced: &Vec<&'a DictString>,
-  gambling_factor: f64,
+  strategy: Strategy,
 ) -> HashMap<&'a DictString, f64> {
   return words_all
     .par_iter()
-    .map(|&x| {
-      (
-        x,
-        compute_percentile_subset_sz(x, &words_reduced, gambling_factor),
-      )
-    })
+    .map(|&x| (x, compute_information_value(x, &words_reduced, strategy)))
     .collect();
 }
 
-fn compute_percentile_subset_sz(
-  guess: &DictString,
-  words: &Vec<&DictString>,
-  gambling_factor: f64,
-) -> f64 {
-  let buckets = words
+fn compute_bucket_sizes(guess: &DictString, words: &Vec<&DictString>) -> Vec<usize> {
+  words
     .into_iter()
     .map(|w| (compute_bucket(guess, w), w))
     .into_group_map()
     .into_iter()
-    .map(|(_, g)| g.len());
+    .map(|(_, g)| g.len())
+    .collect::<Vec<_>>()
+}
 
-  if gambling_factor <= 0.01 {
-    return buckets.max().unwrap_or(0) as f64;
-  } else {
-    let mut bucket_sizes: Vec<usize> = buckets.collect();
-    bucket_sizes.sort_by(|a, b| {
-      if a > b {
-        Ordering::Less
-      } else if a < b {
-        Ordering::Greater
-      } else {
-        Ordering::Equal
-      }
-    });
+fn compute_information_value(
+  guess: &DictString,
+  words: &Vec<&DictString>,
+  strategy: Strategy,
+) -> f64 {
+  let mut bucket_sizes = compute_bucket_sizes(guess, words);
 
-    let mut total_size = 0;
-
-    for size in bucket_sizes {
-      total_size += size;
-      let new_gambling = total_size as f64 / words.len() as f64;
-      if new_gambling > gambling_factor {
-        return size as f64;
-      }
+  match strategy {
+    Strategy::WorstCase => {
+      let worst_case_count = bucket_sizes.into_iter().max().unwrap_or(0) as f64;
+      return (words.len() as f64 / worst_case_count).log2();
     }
+    Strategy::Average => {
+      let information_amount: f64 = bucket_sizes
+        .into_iter()
+        .map(|sz| {
+          let guess_probability = sz as f64 / words.len() as f64;
+          let log_info = (1.0 / guess_probability).log2();
+          return guess_probability * log_info;
+        })
+        .sum();
 
-    return 0.0;
+      return information_amount;
+    }
+    Strategy::Gambling(gambling_factor) => {
+      bucket_sizes.sort_by(|a, b| {
+        if a > b {
+          Ordering::Less
+        } else if a < b {
+          Ordering::Greater
+        } else {
+          Ordering::Equal
+        }
+      });
+
+      let mut total_size = 0;
+
+      for size in bucket_sizes {
+        total_size += size;
+        let new_gambling = total_size as f64 / words.len() as f64;
+        if new_gambling > gambling_factor {
+          return (words.len() as f64 / size as f64).log2();
+        }
+      }
+
+      return 0.0;
+    }
   }
 }
 
@@ -129,15 +153,15 @@ fn reduce_dictionary<'a>(
 fn get_suggestions<'a>(
   dict: &Vec<&'a DictString>,
   reduced_dict: &Vec<&'a DictString>,
-  gambling_factor: f64,
+  strategy: Strategy,
 ) -> (Vec<(&'a DictString, f64)>, Vec<(&'a DictString, f64)>) {
-  let scores = compute_guess_scores(&dict, &reduced_dict, gambling_factor);
+  let scores = compute_guess_scores(&dict, &reduced_dict, strategy);
 
   let score_criteria = |a: &&DictString, b: &&DictString| {
     let diff = scores.get(a).unwrap_or(&0.0) - scores.get(b).unwrap_or(&0.0);
-    if diff > 0.0 {
+    if diff < 0.0 {
       Ordering::Greater
-    } else if diff < 0.0 {
+    } else if diff > 0.0 {
       Ordering::Less
     } else {
       Ordering::Equal
@@ -174,24 +198,24 @@ where
 fn interactive(
   dictionary: Vec<DictString>,
   reducing_dictionary: Vec<DictString>,
-  gambling_factor: f64,
+  strategy: Strategy,
 ) {
   let dictionary_ref: Vec<&DictString> = dictionary.iter().collect();
   let mut reducing_dictionary_ref = reducing_dictionary.iter().collect();
 
   let stdin = io::stdin();
 
-  let (sugg1, sugg2) = get_suggestions(&dictionary_ref, &reducing_dictionary_ref, gambling_factor);
+  let (sugg1, sugg2) = get_suggestions(&dictionary_ref, &reducing_dictionary_ref, strategy);
 
   println!(
     "Suggestions: {:?} {:?}",
     sugg1.len(),
-    sugg1.into_iter().take(7).collect::<Vec<_>>()
+    sugg1.into_iter().take(SHOWN_GUESSES).collect::<Vec<_>>()
   );
   println!(
     "Guesses: {:?} {:?}",
     sugg2.len(),
-    sugg2.into_iter().take(7).collect::<Vec<_>>()
+    sugg2.into_iter().take(SHOWN_GUESSES).collect::<Vec<_>>()
   );
 
   for line in stdin.lock().lines() {
@@ -215,23 +239,23 @@ fn interactive(
       reduce_dictionary(&used_word, &update_marks, &reducing_dictionary_ref);
 
     let (ref sugg1, ref sugg2) =
-      get_suggestions(&dictionary_ref, &reducing_dictionary_ref, gambling_factor);
+      get_suggestions(&dictionary_ref, &reducing_dictionary_ref, strategy);
 
     println!(
       "Suggestions: {:?} {:?}",
       sugg1.len(),
-      sugg1.into_iter().take(10).collect::<Vec<_>>()
+      sugg1.into_iter().take(SHOWN_GUESSES).collect::<Vec<_>>()
     );
     println!(
       "Guesses: {:?} {:?}",
       sugg2.len(),
-      sugg2.into_iter().take(10).collect::<Vec<_>>()
+      sugg2.into_iter().take(SHOWN_GUESSES).collect::<Vec<_>>()
     );
 
     let (sug_word, sug_score) = sugg1[0];
     let (guess_word, guess_score) = sugg2[0];
 
-    let attempt_word = if sug_score >= guess_score + 0.1 {
+    let attempt_word = if sug_score >= guess_score + 0.005 {
       sug_word
     } else {
       guess_word
@@ -245,15 +269,14 @@ fn play_word(
   word: String,
   dictionary: Vec<DictString>,
   reducing_dictionary: Vec<DictString>,
-  gambling_factor: f64,
+  strategy: Strategy,
 ) {
   let dict_ref: Vec<&DictString> = dictionary.iter().collect();
   let mut reducing_dict_ref: Vec<&DictString> = reducing_dictionary.iter().collect();
 
   let mut tries = 0;
   loop {
-    let (ref suggestions, ref guesses) =
-      get_suggestions(&dict_ref, &reducing_dict_ref, gambling_factor);
+    let (ref suggestions, ref guesses) = get_suggestions(&dict_ref, &reducing_dict_ref, strategy);
 
     if guesses.len() == 0 {
       println!("Stumped, cannot figure it out");
@@ -269,18 +292,25 @@ fn play_word(
       println!(
         "Suggestions: {:?} {:?}",
         suggestions.len(),
-        suggestions.into_iter().take(10).collect::<Vec<_>>()
+        suggestions
+          .into_iter()
+          .take(SHOWN_GUESSES)
+          .collect::<Vec<_>>()
       );
       println!(
         "Guesses: {:?} {:?}",
         guesses.len(),
-        guesses.into_iter().take(10).collect::<Vec<_>>()
+        guesses.into_iter().take(SHOWN_GUESSES).collect::<Vec<_>>()
       );
 
       let (sug_word, sug_score) = suggestions[0];
       let (guess_word, guess_score) = guesses[0];
 
-      let attempt_word = if sug_score >= guess_score + 0.1 {
+      // let remaining_guess_bits = (1.0 / guesses.len() as f64).log2();
+      // let after_suggestion_bits = remaining_guess_bits - sug_score;
+      // let after_guess_bits = remaining_guess_bits - guess_score;
+
+      let attempt_word = if sug_score >= guess_score + 0.005 {
         sug_word
       } else {
         guess_word
@@ -321,12 +351,16 @@ struct Args {
   dict: String,
 
   /// Path to a reduced guess dictionary to use
-  #[clap(long)]
+  #[clap(short, long)]
   guesses: Option<String>,
 
-  /// Gambling factor. How optimistic should the bot be while playing (max=1.0)
-  #[clap(short, long, default_value_t = 0.0)]
-  gambling: f64,
+  /// Use a gambling strategy (instead of a best-average case default)
+  #[clap(short, long)]
+  gambling: Option<f64>,
+
+  /// Use the worst case strategy (instead of best average case default). Good against Absurdle
+  #[clap(short, long)]
+  pessimistic: bool,
 
   /// Disables interactive mode and replays a game to guess the specified word
   #[clap(short, long)]
@@ -343,12 +377,21 @@ fn main() {
     Some(file) => read_dict(&file),
   };
 
+  let strategy = match (args.gambling, args.pessimistic) {
+    (None, false) => Strategy::Average,
+    (None, true) => Strategy::WorstCase,
+    (Some(factor), false) => Strategy::Gambling(factor),
+    (_, _) => {
+      panic!("Wrong set of options")
+    }
+  };
+
   match args.word {
     None => {
-      interactive(dictionary, dictionary_reduced, args.gambling);
+      return interactive(dictionary, dictionary_reduced, strategy);
     }
     Some(word) => {
-      play_word(word, dictionary, dictionary_reduced, args.gambling);
+      return play_word(word, dictionary, dictionary_reduced, strategy);
     }
   }
 }
