@@ -351,7 +351,7 @@ struct Args {
   dict: String,
 
   /// Path to a reduced guess dictionary to use
-  #[clap(short, long)]
+  #[clap(long)]
   guesses: Option<String>,
 
   /// Use a gambling strategy (instead of a best-average case default)

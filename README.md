@@ -44,6 +44,7 @@ USAGE:
 OPTIONS:
     -d, --dict <DICT>            Path to the word dictionary to use [default: words.txt]
     -g, --gambling <GAMBLING>    Use a gambling strategy (instead of a best-average case default)
+        --guesses <GUESSES>      Path to a reduced guess dictionary to use
     -h, --help                   Print help information
     -p, --pessimistic            Use the worst case strategy (instead of best average case default).
                                  Good against Absurdle
