@@ -37,8 +37,32 @@ presented so far, but would reduce the set of possible words very well. Guesses 
 do conform to the constraints - they are also sorted by how well they will subdivide the
 remaining possible guesses
 
+```
+USAGE:
+    wordle-solver [OPTIONS]
+
+OPTIONS:
+    -d, --dict <DICT>            Path to the word dictionary to use [default: words.txt]
+    -g, --gambling <GAMBLING>    Use a gambling strategy (instead of a best-average case default)
+    -h, --help                   Print help information
+    -p, --pessimistic            Use the worst case strategy (instead of best average case default).
+                                 Good against Absurdle
+    -V, --version                Print version information
+    -w, --word <WORD>            Disables interactive mode and replays a game to guess the specified
+                                 word
+```
+
 # How does it work?
 
-For each possible guess, we subdivide the set of words into different subsets based on what colors wordle would give us for that word. Then we score the words based on the largest subset size. We aim to pick a word where the largest subset is the smallest.
+For each possible guess, we subdivide the set of words into different subsets based on what colors wordle would give us for that word. Then we score the words based on the subset sizes
 
-This is illustrated in the following jamboard: https://jamboard.google.com/d/1weQUvRyrVqaYsPRa_qhH-NycKwW3TSUqa46_CBsYGSk/viewer?f=0
+- By default, we score by the average amount of information a guess is most likely to yield
+- By passing `--pessimistic` you can get the best-worst-case guess (useful for playing [Absurdle][1])
+- By passing `--gambling` you can get a percentile-case of your chosing (0 is worst case, 0.5 is
+  median guess)
+
+ The worst case scenario is illustrated in a [JamBoard presentation][2]
+
+
+[1]: https://qntm.org/files/absurdle/absurdle.html
+[2]: https://jamboard.google.com/d/1weQUvRyrVqaYsPRa_qhH-NycKwW3TSUqa46_CBsYGSk/viewer?f=0
