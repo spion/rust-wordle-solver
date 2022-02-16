@@ -57,7 +57,7 @@ OPTIONS:
 
 For each possible guess, we subdivide the set of words into different subsets based on what colors wordle would give us for that word. Then we score the words based on the subset sizes
 
-- By default, we score by the average amount of information a guess is most likely to yield
+- By default, we score by the average amount of [information a guess is most likely to yield][3]
 - By passing `--pessimistic` you can get the best-worst-case guess (useful for playing [Absurdle][1])
 - By passing `--gambling` you can get a percentile-case of your chosing (0 is worst case, 0.5 is
   median guess)
@@ -67,3 +67,4 @@ For each possible guess, we subdivide the set of words into different subsets ba
 
 [1]: https://qntm.org/files/absurdle/absurdle.html
 [2]: https://jamboard.google.com/d/1weQUvRyrVqaYsPRa_qhH-NycKwW3TSUqa46_CBsYGSk/viewer?f=0
+[3]: https://www.youtube.com/watch?v=v68zYyaEmEA
